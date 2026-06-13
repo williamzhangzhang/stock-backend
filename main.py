@@ -11,44 +11,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_KEY = "PwEfeVcpHgkUrcIxzdo91HfBcHTnsNWR"
+POPULAR_STOCKS = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
+    "META", "TSLA", "BRK-B", "JPM", "V",
+    "UNH", "XOM", "LLY", "JNJ", "WMT",
+    "MA", "PG", "HD", "CVX", "MRK",
+    "ABBV", "PEP", "KO", "COST", "AVGO",
+    "BAC", "PFE", "TMO", "CSCO", "ACN",
+    "MCD", "CRM", "ABT", "NFLX", "LIN",
+    "DHR", "AMD", "TXN", "NEE", "PM",
+    "ORCL", "QCOM", "UPS", "MS", "INTC",
+    "INTU", "RTX", "AMGN", "GS", "CAT"
+]
 
 @app.get("/api/stocks")
 async def get_stocks():
-    url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
-    params = {
-        "apiKey": API_KEY,
-        "include_otc": "false"
+    symbols = ",".join(POPULAR_STOCKS)
+    url = f"https://query1.finance.yahoo.com/v7/finance/quote"
+    params = {"symbols": symbols}
+    headers = {
+        "User-Agent": "Mozilla/5.0"
     }
+
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url, params=params)
+        resp = await client.get(url, params=params, headers=headers)
         data = resp.json()
 
-    tickers = data.get("tickers", [])
+    quotes = data.get("quoteResponse", {}).get("result", [])
     results = []
-
-    for t in tickers:
-        day = t.get("day", {})
-        volume = day.get("v", 0)
-        close = day.get("c", 0)
-        change_pct = t.get("todaysChangePerc", 0)
-        amount = volume * close
-
-        if amount <= 0:
-            continue
-
+    for q in quotes:
+        price = q.get("regularMarketPrice", 0)
+        volume = q.get("regularMarketVolume", 0)
+        change_pct = q.get("regularMarketChangePercent", 0)
+        amount = price * volume
         results.append({
-            "symbol": t.get("ticker", ""),
-            "name": t.get("ticker", ""),
-            "price": round(close, 2),
+            "symbol": q.get("symbol", ""),
+            "name": q.get("shortName", q.get("symbol", "")),
+            "price": round(price, 2),
             "change": round(change_pct, 2),
             "volume": int(volume),
             "amount": amount,
-            "sector": "美股",
+            "sector": q.get("sector", "美股"),
         })
 
     results.sort(key=lambda x: x["amount"], reverse=True)
-    return results[:500]
+    return results
 
 @app.get("/health")
 def health():

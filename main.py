@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import httpx
+import yfinance as yf
 
 app = FastAPI()
 
@@ -26,33 +26,35 @@ POPULAR_STOCKS = [
 
 @app.get("/api/stocks")
 async def get_stocks():
-    symbols = ",".join(POPULAR_STOCKS)
-    url = f"https://query1.finance.yahoo.com/v7/finance/quote"
-    params = {"symbols": symbols}
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url, params=params, headers=headers)
-        data = resp.json()
-
-    quotes = data.get("quoteResponse", {}).get("result", [])
     results = []
-    for q in quotes:
-        price = q.get("regularMarketPrice", 0)
-        volume = q.get("regularMarketVolume", 0)
-        change_pct = q.get("regularMarketChangePercent", 0)
-        amount = price * volume
-        results.append({
-            "symbol": q.get("symbol", ""),
-            "name": q.get("shortName", q.get("symbol", "")),
-            "price": round(price, 2),
-            "change": round(change_pct, 2),
-            "volume": int(volume),
-            "amount": amount,
-            "sector": q.get("sector", "美股"),
-        })
+    try:
+        symbols = " ".join(POPULAR_STOCKS)
+        tickers = yf.Tickers(symbols)
+        
+        for symbol in POPULAR_STOCKS:
+            try:
+                ticker = tickers.tickers[symbol]
+                info = ticker.fast_info
+                price = info.last_price or 0
+                volume = info.last_volume or 0
+                prev_close = info.previous_close or 0
+                change_pct = round((price - prev_close) / prev_close * 100, 2) if prev_close else 0
+                amount = price * volume
+                if amount <= 0:
+                    continue
+                results.append({
+                    "symbol": symbol,
+                    "name": symbol,
+                    "price": round(float(price), 2),
+                    "change": change_pct,
+                    "volume": int(volume),
+                    "amount": float(amount),
+                    "sector": "美股",
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        return {"error": str(e)}
 
     results.sort(key=lambda x: x["amount"], reverse=True)
     return results
